@@ -10,6 +10,20 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
+-- Name: btree_gin; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS btree_gin WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION btree_gin; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION btree_gin IS 'support for indexing common datatypes in GIN';
+
+
+--
 -- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
 --
 
@@ -112,8 +126,8 @@ ALTER SEQUENCE public.admins_id_seq OWNED BY public.admins.id;
 CREATE TABLE public.ar_internal_metadata (
     key character varying NOT NULL,
     value character varying,
-    created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
 );
 
 
@@ -372,6 +386,72 @@ CREATE SEQUENCE public.envelopes_id_seq
 --
 
 ALTER SEQUENCE public.envelopes_id_seq OWNED BY public.envelopes.id;
+
+
+--
+-- Name: indexed_envelope_resource_references; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexed_envelope_resource_references (
+    id bigint NOT NULL,
+    path character varying NOT NULL,
+    resource_id bigint NOT NULL,
+    resource_uri character varying NOT NULL,
+    subresource_uri character varying NOT NULL
+);
+
+
+--
+-- Name: indexed_envelope_resource_references_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.indexed_envelope_resource_references_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: indexed_envelope_resource_references_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.indexed_envelope_resource_references_id_seq OWNED BY public.indexed_envelope_resource_references.id;
+
+
+--
+-- Name: indexed_envelope_resources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexed_envelope_resources (
+    id bigint NOT NULL,
+    "@id" character varying NOT NULL,
+    "@type" character varying NOT NULL,
+    "ceterms:ctid" character varying,
+    envelope_resource_id bigint NOT NULL,
+    created_at timestamp without time zone NOT NULL,
+    payload jsonb DEFAULT '"{}"'::jsonb NOT NULL
+);
+
+
+--
+-- Name: indexed_envelope_resources_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.indexed_envelope_resources_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: indexed_envelope_resources_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.indexed_envelope_resources_id_seq OWNED BY public.indexed_envelope_resources.id;
 
 
 --
@@ -751,6 +831,20 @@ ALTER TABLE ONLY public.envelopes ALTER COLUMN id SET DEFAULT nextval('public.en
 
 
 --
+-- Name: indexed_envelope_resource_references id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexed_envelope_resource_references ALTER COLUMN id SET DEFAULT nextval('public.indexed_envelope_resource_references_id_seq'::regclass);
+
+
+--
+-- Name: indexed_envelope_resources id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexed_envelope_resources ALTER COLUMN id SET DEFAULT nextval('public.indexed_envelope_resources_id_seq'::regclass);
+
+
+--
 -- Name: json_contexts id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -887,6 +981,22 @@ ALTER TABLE ONLY public.envelopes
 
 
 --
+-- Name: indexed_envelope_resource_references indexed_envelope_resource_references_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexed_envelope_resource_references
+    ADD CONSTRAINT indexed_envelope_resource_references_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: indexed_envelope_resources indexed_envelope_resources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexed_envelope_resources
+    ADD CONSTRAINT indexed_envelope_resources_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: json_contexts json_contexts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -986,6 +1096,41 @@ CREATE INDEX envelope_resources_fts_trigram_idx ON public.envelope_resources USI
 --
 
 CREATE INDEX envelopes_resources_id_idx ON public.envelopes USING btree (((processed_resource ->> '@id'::text)));
+
+
+--
+-- Name: i_ctdl_ceterms_ctid; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX i_ctdl_ceterms_ctid ON public.indexed_envelope_resources USING btree ("ceterms:ctid");
+
+
+--
+-- Name: i_ctdl_ceterms_ctid_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX i_ctdl_ceterms_ctid_trgm ON public.indexed_envelope_resources USING gin ("ceterms:ctid" public.gin_trgm_ops);
+
+
+--
+-- Name: i_ctdl_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX i_ctdl_id ON public.indexed_envelope_resources USING btree ("@id");
+
+
+--
+-- Name: i_ctdl_id_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX i_ctdl_id_trgm ON public.indexed_envelope_resources USING gin ("@id" public.gin_trgm_ops);
+
+
+--
+-- Name: i_ctdl_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX i_ctdl_type ON public.indexed_envelope_resources USING btree ("@type");
 
 
 --
@@ -1101,6 +1246,13 @@ CREATE UNIQUE INDEX index_envelopes_on_envelope_community_id_and_envelope_ceterm
 
 
 --
+-- Name: index_envelopes_on_envelope_ctdl_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_envelopes_on_envelope_ctdl_type ON public.envelopes USING btree (envelope_ctdl_type);
+
+
+--
 -- Name: index_envelopes_on_envelope_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1143,10 +1295,38 @@ CREATE INDEX index_envelopes_on_purged_at ON public.envelopes USING btree (purge
 
 
 --
+-- Name: index_envelopes_on_resource_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_envelopes_on_resource_type ON public.envelopes USING btree (resource_type);
+
+
+--
 -- Name: index_envelopes_on_top_level_object_ids; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX index_envelopes_on_top_level_object_ids ON public.envelopes USING gin (top_level_object_ids);
+
+
+--
+-- Name: index_indexed_envelope_resource_references; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_indexed_envelope_resource_references ON public.indexed_envelope_resource_references USING btree (path, resource_id, resource_uri, subresource_uri);
+
+
+--
+-- Name: index_indexed_envelope_resource_references_on_subresource_uri; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_indexed_envelope_resource_references_on_subresource_uri ON public.indexed_envelope_resource_references USING gin (subresource_uri public.gin_trgm_ops);
+
+
+--
+-- Name: index_indexed_envelope_resources_on_envelope_resource_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_indexed_envelope_resources_on_envelope_resource_id ON public.indexed_envelope_resources USING btree (envelope_resource_id);
 
 
 --
@@ -1248,31 +1428,10 @@ CREATE INDEX index_query_logs_on_completed_at ON public.query_logs USING btree (
 
 
 --
--- Name: index_query_logs_on_ctdl; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_query_logs_on_ctdl ON public.query_logs USING btree (ctdl);
-
-
---
 -- Name: index_query_logs_on_engine; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX index_query_logs_on_engine ON public.query_logs USING btree (engine);
-
-
---
--- Name: index_query_logs_on_query_logic; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_query_logs_on_query_logic ON public.query_logs USING btree (query_logic);
-
-
---
--- Name: index_query_logs_on_result; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_query_logs_on_result ON public.query_logs USING btree (result);
 
 
 --
@@ -1398,6 +1557,14 @@ ALTER TABLE ONLY public.organization_publishers
 
 
 --
+-- Name: indexed_envelope_resource_references fk_rails_9294385e86; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexed_envelope_resource_references
+    ADD CONSTRAINT fk_rails_9294385e86 FOREIGN KEY (resource_id) REFERENCES public.indexed_envelope_resources(id) ON DELETE CASCADE;
+
+
+--
 -- Name: users fk_rails_9ef4d305d6; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1427,6 +1594,22 @@ ALTER TABLE ONLY public.publishers
 
 ALTER TABLE ONLY public.publish_requests
     ADD CONSTRAINT fk_rails_c01765f016 FOREIGN KEY (envelope_id) REFERENCES public.envelopes(id);
+
+
+--
+-- Name: indexed_envelope_resource_references fk_rails_ce18a72cd9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexed_envelope_resource_references
+    ADD CONSTRAINT fk_rails_ce18a72cd9 FOREIGN KEY (resource_uri) REFERENCES public.indexed_envelope_resources("@id") ON DELETE CASCADE;
+
+
+--
+-- Name: indexed_envelope_resources fk_rails_dbc7ed34a9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexed_envelope_resources
+    ADD CONSTRAINT fk_rails_dbc7ed34a9 FOREIGN KEY (envelope_resource_id) REFERENCES public.envelope_resources(id) ON DELETE CASCADE;
 
 
 --
@@ -1501,11 +1684,15 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20200601094240'),
 ('20200727085544'),
 ('20200813121714'),
+('20200922150215'),
+('20200922150449'),
 ('20201012074942'),
 ('20210121082610'),
 ('20210311135955'),
+('20210513043719'),
 ('20210601020245'),
 ('20210624173908'),
-('20210715141032');
+('20210715141032'),
+('20210823125722');
 
 
